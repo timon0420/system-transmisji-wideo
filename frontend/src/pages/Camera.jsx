@@ -21,6 +21,7 @@ export const Camera = () => {
     const [stream, setStream] = useState(null)
     const [error, setError] = useState(null)
     const [session, setSession] = useState(null)
+    const [sessionAttempt, setSessionAttempt] = useState(0)
     const [connectionStatus, setConnectionStatus] = useState('connecting')
     const [analysisStatus, setAnalysisStatus] = useState('unknown')
     const [unityConnected, setUnityConnected] = useState(false)
@@ -64,10 +65,11 @@ export const Camera = () => {
         }
         createSession()
         return () => controller.abort()
-    }, [])
+    }, [sessionAttempt])
 
     useEffect(() => {
         if (!session) return undefined
+        let disposed = false
         const socket = new WebSocket(websocketUrl('/ws/browser', session.browserToken))
         wsRef.current = socket
         setConnectionStatus('connecting')
@@ -80,6 +82,11 @@ export const Camera = () => {
                 if (message.type === 'status') {
                     setAnalysisStatus(message.analysis || 'unavailable')
                     setUnityConnected(Boolean(message.unity))
+                    if (message.analysisError) {
+                        setError(message.analysisError)
+                    } else if (message.analysis === 'ready') {
+                        setError(null)
+                    }
                 } else if (message.type === 'analysis') {
                     setAnalysisStatus('ready')
                     setAnalysis({
@@ -97,9 +104,17 @@ export const Camera = () => {
             }
         }
         socket.onerror = () => setConnectionStatus('disconnected')
-        socket.onclose = () => setConnectionStatus('disconnected')
+        socket.onclose = () => {
+            setConnectionStatus('disconnected')
+            if (!disposed) {
+                sessionStorage.removeItem('manipulatorSession')
+                setSession(null)
+                setTimeout(() => setSessionAttempt((value) => value + 1), 1000)
+            }
+        }
 
         return () => {
+            disposed = true
             wsRef.current = null
             socket.close()
         }
@@ -181,7 +196,7 @@ export const Camera = () => {
                 </div>
                 <div className="session-panel__clients">
                     <span className={analysisStatus === 'ready' ? 'client-state is-online' : 'client-state'}>
-                        <i /> Analiza {analysisStatus === 'ready' ? 'gotowa' : 'niedostępna'}
+                        <i /> Python {analysisStatus === 'ready' ? 'połączony' : 'oczekuje'}
                     </span>
                     <span className={unityConnected ? 'client-state is-online' : 'client-state'}>
                         <i /> Unity {unityConnected ? 'połączone' : 'oczekuje'}
